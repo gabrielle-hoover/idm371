@@ -16,6 +16,8 @@ function toggle_page(new_form) {
     });
 }
 
+const message_tone = new Audio('/message-tone.mp3');
+
 const back_button = document.querySelector('#back_button');
 const title = document.querySelector('#title');
 const chat_box = document.querySelector('#chat_box');
@@ -146,7 +148,7 @@ function init_pick_match_form(current_uuid) {
 
         const thread_id = set_thread_id(current_uuid, match_uuid);
         init_chat_form(current_uuid, match_uuid);
-        refresh_chat(current_uuid, match_uuid, thread_id);
+        recall_chat(current_uuid, match_uuid, thread_id);
     })
 }
 
@@ -204,28 +206,39 @@ function send_message(current_uuid, match_uuid) {
     }
 }
 
-function refresh_chat(current_uuid, match_uuid, thread_id) {
+function recall_chat(current_uuid, match_uuid, thread_id) {
     console.log('This Thread ID: ' + thread_id);
 
+    title.innerText = match_uuid;
+    chat_box.innerHTML = '';
+
     const doc = db.collection('chats').doc('thread-' + thread_id).collection('messages');
-    const observer = doc.onSnapshot(docSnapshot => {
+    doc.orderBy('when', 'asc') // Index Collection ID: 'chats'
+        .get()
+        .then(function (querySnapshot) {
+            title.innerText = match_uuid;
+            chat_box.innerHTML = '';
+            querySnapshot.forEach(function (doc) {
+                insert_message(current_uuid, match_uuid, doc);
+            });
+            scroll_to_bottom('tell');
+        })
+        .catch(function (error) {
+            console.log('Error getting documents: ', error);
+        });
+    observe_chat(current_uuid, match_uuid, doc);
+}
+
+function observe_chat(current_uuid, match_uuid, doc) {
+    const observer = doc.onCreate(docSnapshot => {
         doc.orderBy('when', 'asc') // Index Collection ID: 'chats'
             .get()
             .then(function (querySnapshot) {
-                title.innerText = match_uuid;
-                chat_box.innerHTML = '';
-                querySnapshot.forEach(function (doc) {
-                    const content = (doc.id, ' => ', doc.data().content);
-                    const from = (doc.id, ' => ', doc.data().from);
 
-                    const element = `
-                    <li class="message ${who_sent(from, current_uuid, match_uuid)}">
-                        <p class="name">${content}</p>
-                    </li>
-                    `
-                    chat_box.innerHTML += element;
-                });
-                scroll_to_bottom();
+                chat_query(current_uuid, match_uuid, doc);
+
+                scroll_to_bottom('ask');
+                play_tone();
             })
             .catch(function (error) {
                 console.log('Error getting documents: ', error);
@@ -235,11 +248,35 @@ function refresh_chat(current_uuid, match_uuid, thread_id) {
     });
 }
 
-function scroll_to_bottom() {
-    if (chat_box.scrollHeight - chat_box.scrollTop > 500) {
+function insert_message(current_uuid, match_uuid, doc) {
+
+    const content = (doc.id, ' => ', doc.data().content);
+    const from = (doc.id, ' => ', doc.data().from);
+    const time = (doc.id, ' => ', format_fs_tstamp(doc.data().when));
+
+    const element = `
+        <li class="message ${who_sent(from, current_uuid, match_uuid)}">
+            <p>${content}</p>
+            <p class="time">${time}</p>
+        </li>
+        `
+    chat_box.innerHTML += element;
+}
+
+function play_tone() {
+    const last_message = document.querySelector('.message:last-of-type');
+    if (last_message.classList.contains('from_them')) {
+        message_tone.play();
+    }
+}
+
+function scroll_to_bottom(command) {
+    if (command == 'ask') {
+        if ((chat_box.scrollHeight - (chat_box.scrollTop + chat_box.clientHeight)) <= 500) {
+            chat_box.scrollTo(0, chat_box.scrollHeight);
+        }
+    } else if (command == 'tell') {
         chat_box.scrollTo(0, chat_box.scrollHeight);
-    } else {
-        console.log('maybe scroll down');
     }
 }
 
@@ -251,6 +288,10 @@ function set_thread_id(uuid1, uuid2) {
 function who_sent(from, current_uuid, match_uuid) {
     from == current_uuid ? sender = 'from_me' : sender = 'from_them';
     return sender;
+}
+
+function format_fs_tstamp(tstamp) {
+    return moment(tstamp.toDate()).format("D/M/YY • h:mm a");
 }
 
 // Needs to do

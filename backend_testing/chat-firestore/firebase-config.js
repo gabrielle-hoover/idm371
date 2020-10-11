@@ -1,3 +1,4 @@
+// const admin = require('firebase-admin');
 var firebaseConfig = {
     apiKey: "AIzaSyBlBedJDEvem2r8myXJf4gmoHlHIY8cqGI",
     authDomain: "shuffle-devtest.firebaseapp.com",
