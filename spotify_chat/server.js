@@ -292,6 +292,7 @@ app.get('/search', function (req, res) {
                     'album': item.album.name
                 });
             });
+			   console.log('res:');
             res.send(tracks);
         }
     });

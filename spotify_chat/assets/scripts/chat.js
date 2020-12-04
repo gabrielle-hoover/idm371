@@ -308,6 +308,7 @@ document.getElementById('search_anthem').addEventListener('click', function () {
             'query': query
         }
     }).done(function (data) { //receive info, populate html, add event listeners to tracks to add as anthem
+		  console.log(data);
 
         //add tracks to page in search results
         let i = 1;
