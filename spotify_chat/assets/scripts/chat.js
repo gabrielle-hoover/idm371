@@ -31,16 +31,15 @@ function no() {
 }
 
 function toggle_page(new_form) { // Hides all forms except the form pass to 'new_form' argument, lodes back button
+    chat_box.innerText = '';
+    profile_button.style.display = 'none';
     toggle_modal('close');
     if (new_form == 'login_form') {
         init_login_form();
-        profile_button.style.display = 'none';
     } else if (new_form == 'sign_up_form') {
-        profile_button.style.display = 'none';
         // this init happens once only, therefore its in init()
-    } else if (new_form == 'user_hub_form') {
-        init_user_hub_form(spotify_id);
-        profile_button.style.display = 'flex';
+    } else if (new_form == 'browse_users_form') {
+        init_browse_users_form(spotify_id);
     } else if (new_form == 'profile_view_form') {
         profile_options_button.style.display = 'flex';
     } else if (new_form == 'profile_cms_form') {
@@ -62,7 +61,7 @@ function toggle_page(new_form) { // Hides all forms except the form pass to 'new
 const back_button = docQ('#back_button'),
     nav_title = docQ('#nav_title'),
     chat_box = docQ('#chat_box'),
-    browse_profiles_wrap = docQ('#browse_profiles_wrap'),
+    browse_profiles_list = docQ('#browse_profiles_list'),
     modal = docQ('#modal'),
     all_modals = docQA('.modal_common'),
     modal_close_button = docQA('.modal_close_button'),
@@ -81,10 +80,10 @@ back_button.addEventListener('click', (e) => {
 })
 
 function load_back_button(this_form) { // Adds correct link to back button
-    if (this_form == 'sign_up_form' || this_form == 'user_hub_form') {
+    if (this_form == 'sign_up_form' || this_form == 'browse_users_form') {
         back_button.dataset.value = 'login_form';
     } else if (this_form == 'chat_form' || this_form == 'profile_view_form') {
-        back_button.dataset.value = 'user_hub_form';
+        back_button.dataset.value = 'browse_users_form';
     } else if (this_form == 'profile_cms_form') {
         back_button.dataset.value = 'profile_view_form';
     } else if (this_form == 'add_anthem') {
@@ -179,6 +178,7 @@ const profile_button = docQ('#profile_button'),
 function init() {
     console.log('Initializing App');
     route_user(spotify_id);
+    init_nav(spotify_id);
 }
 
 function route_user(uuid) { // Check user validity then route to login or sign up
@@ -190,13 +190,31 @@ function route_user(uuid) { // Check user validity then route to login or sign u
     });
 }
 
+const nav_profile_button = docQ('#nav_profile_button'),
+    nav_chat_button = docQ('#nav_chat_button'),
+    nav_browse_button = docQ('#nav_browse_button');
+
+function init_nav(current_uuid) {
+    nav_profile_button.addEventListener('click', () => {
+        toggle_page('profile_view_form');
+        init_profile_view_form(current_uuid, current_uuid);
+    });
+    nav_chat_button.addEventListener('click', () => {
+        toggle_page('recent_chat_form');
+        init_recent_chat_form(current_uuid);
+    });
+    nav_browse_button.addEventListener('click', () => {
+        toggle_page('browse_users_form');
+    });
+}
+
 // ==============================
 // login_form
 // ==============================
 
 function init_login_form() {
     stop_players();
-    browse_profiles_wrap.innerText = '';
+    browse_profiles_list.innerText = '';
     back_button.style.display = 'none';
     nav_title.innerText = '';
     chat_box.innerText = '';
@@ -211,7 +229,7 @@ function login_shuffle(current_uuid) { // Logs user into shuffle. 1 param: (the 
                 broadcast(`Logged in as: '${name}'`, 'unset');
             })
 
-            toggle_page('user_hub_form');
+            toggle_page('browse_users_form');
         } else {
             broadcast(`'${current_uuid}' is not a user!`, 'var(--red)');
         }
@@ -263,18 +281,17 @@ function create_user(id_to_use) { // Create a user
         pronouns: pronouns_input.value,
         location: 'Philadelphia, PA',
         school: school_input.value,
-        anthem_id: $('span', document.querySelector('selected_anthem'))[0].innerHTML,
+        anthem_id: anthem_id_input.dataset.anthem,
         looking_for: merge_checkboxes('looking_for'),
         bio: bio_input.value,
         new_user: false, // Signifies completed profile
-        join_date: timestamp()
+        join_date: timestamp(),
     };
 
     // Push data to FireStore
     db.collection('users').doc(id_to_use).set(data).then(function () {
         console.log('Account Created!');
-        add_anthem(id_to_use);
-        //
+        login_shuffle(id_to_use);
     }).catch(function (error) {
         console.error(error);
     });
@@ -294,10 +311,12 @@ function merge_checkboxes(category) { // [Reusable]
 // search_anthem
 // ==============================
 
-document.getElementById('search_anthem').addEventListener('click', function () {
+const search_anthem_button = docQ('#search_anthem_button');
 
-    let query = document.getElementById('anthem_id_input').value; //what the user searches for
-    let search_results = document.getElementById('search_results');
+search_anthem_button.addEventListener('click', () => {
+    const query = anthem_id_input.value, //what the user searches for
+        search_results = docQ('#search_results');
+
     search_results.innerHTML = ''; //clear out previous results
 
     $.ajax({  //send info to server - GET request
@@ -307,52 +326,45 @@ document.getElementById('search_anthem').addEventListener('click', function () {
             'refresh_token': refresh_token,
             'query': query
         }
-    }).done(function (data) { //receive info, populate html, add event listeners to tracks to add as anthem
-		  console.log(data);
+    }).done(function (results) { //receive info, populate html, add event listeners to tracks to add as anthem
+        // Add tracks to page in search results
+        results.forEach(result => {
+            if (result.id) { // Skip the empty results (Idk why Spotify returns those...)
+                const id = result.id,
+                    thumb = result.thumb,
+                    title = result.title,
+                    artist = result.artist,
+                    album = result.album;
 
-        //add tracks to page in search results
-        let i = 1;
-        while (i < 17) {
-            let track_id = data[i].id,
-                track_name = data[i].name,
-                track_thumb = data[i].thumb,
-                track_title = data[i].title,
-                track_artist = data[i].artist,
-                track_album = data[i].album;
+                const track_element = document.createElement('div'); // Create a div element (Better to do it this way for adding event listener later)
+                track_element.classList.add('track'); // Add the class 'track'
 
-            search_results.innerHTML += `
-                <div class="track">\
-                    <img src='+ track_thumb + ' id="track_thumbnail">\
-                    <div class="track_info">\
-                        <h3 class="track_title">'+ track_title + '</h3>\
-                        <h5 class="track_artist">'+ track_artist + ' - ' + track_album + '</h5>\
-                        <span class="track_id" style="display:none">'+ track_id + '</span>\
-                    </div>\
-                </div>
-            `;
-            i += 2;
-        }
+                // Then add the content
+                track_element.innerHTML += `
+                    <img src="${thumb}" id="track_thumbnail">
+                    <div class="track_info">
+                        <h3 class="track_title">${title}</h3>
+                        <h5 class="track_artist">${artist} - ${album}</h5>
+                    </div>
+                `;
 
-        //add event listeners to tracks on page
-        let tracks = document.getElementsByClassName("track");
-        for (let j = 0; j < tracks.length; j++) {
-            tracks[j].addEventListener('click', add_anthem, false);
-        }
+                // Add the track element to the DOM
+                search_results.appendChild(track_element);
+                // Add an event listener to it
+                track_element.addEventListener('click', () => {
+                    // Add a data attribute called anthem to the anthem id input for when user completes sign up
+                    anthem_id_input.dataset.anthem = id;
+                    search_results.innerHTML = ''; //clear out previous results
+                    broadcast('Anthem Added!', 'var(--green)');
+                });
+            }
+        });
     });
 }, false);
 
 // ==============================
 // select_anthem
 // ==============================
-
-function add_anthem() {
-    let tracks = document.getElementsByClassName("track");
-    for (let j = 0; j < tracks.length; j++) {
-        tracks[j].classList.remove('selected_anthem');
-    }
-    this.classList.add('selected_anthem');
-    console.log('updated anthem');
-};
 
 //WORKING EXAMPLE: USE AJAX - GET REFRESH TOKEN - IGNORE FOR NOW - todo
 //document.getElementById('search_anthem').addEventListener('click', function() {
@@ -369,21 +381,19 @@ function add_anthem() {
 //}, false);
 
 // ==============================
-// user_hub_form
+// browse_users_form
 // ==============================
 
-const user_hub_form = docQ('#user_hub_form');
+const browse_users_form = docQ('#browse_users_form');
 
-function init_user_hub_form(current_uuid) { // Initialize match chat selection form
+function init_browse_users_form(current_uuid) { // Initialize match chat selection form
     unsub_all();
     nav_title.innerText = 'Browse Users';
     profile_options_button.style.display = 'none';
+    profile_button.style.display = 'none';
     back_button.style.display = 'none'; // While no logout
     stop_players();
     list_users(current_uuid);
-
-    // User profile button
-    load_profile_button(current_uuid, current_uuid);
 }
 
 function load_profile_button(target, current_uuid) {
@@ -400,33 +410,29 @@ function load_profile_button(target, current_uuid) {
 function list_users(current_uuid) { // Populates SELECT form with matches
     const docRef = db.collection('users').where('new_user', '==', false); // Where users are new
     docRef.get().then(function (doc) {
-        browse_profiles_wrap.innerHTML = '';
+        browse_profiles_list.innerHTML = '';
         doc.forEach(function (doc) {
             const result = doc.data();
             // if (!(doc.id === current_uuid) && (!user_blocked(doc.id, current_uuid))) { // NOT WORKING
             if (!(doc.id === current_uuid)) { // Don't show your own profile
                 decipher_uuid(doc.id).then((name) => {
-                    const pp = doc.data().pp || false;
-                    browse_profiles_wrap.innerHTML += `
-                        <div class="user">
-                            <p class="user_name">${name}</p>
-                        </div>
-                        `;
+                    const pp = result.pp || 'assets/graphics/placeholder.png',
+                        user_element = document.createElement('div');
+                    user_element.classList.add('user');
+                    browse_profiles_list.appendChild(user_element);
 
-                    const this_user = docQ('.user:last-of-type');
-                    if (pp) { // If profile pic exists add it do the .user element
-                        this_user.innerHTML += `
-                            <img src="${result.pp}" class="user_thumb">
-                        `;
-                        pp_thumb.src = result.pp; // Set profile cms thumb
-                    } else { // If no profile pic add placeholder
-                        this_user.innerHTML += `
-                            <div class="pp_placeholder">
-                                <i class="fas fa-user fa-2x" aria-hidden="true"></i>
-                            </div>
-                        `;
-                    }
-                    this_user.addEventListener('click', () => {
+                    user_element.innerHTML += `
+                        <div class="user_top" style="background-image: url(${pp})">
+                            <p class="user_name">${name}</p>
+                            <p class="user_age">${result.age}</p>
+                        </div>
+                        <div class="user_btm">
+                            ${result.anthem_id && '<p class="anthem_label">' + name + "'s Favorite Song</p>"}
+                            <iframe ${result.anthem_id ? 'src=' + 'https://open.spotify.com/embed/track/' + result.anthem_id : 'style="display: none;"'} id="stat_anthem" frameborder="0" allowtransparency="true" allow="encrypted-media"></iframe>
+                        </div>
+                    `;
+
+                    user_element.addEventListener('click', () => {
                         const match_uuid = doc.id,
                             thread_id = set_thread_id(current_uuid, match_uuid);
                         toggle_page('chat_form');
@@ -478,6 +484,64 @@ function rm_bocked_user() { // Temp fix for removing blocked users from user lis
 }
 
 // ==============================
+// recent_chat_form
+// ==============================
+
+function theID(x) {
+    console.log('first class: ' + ('uuid' + x))
+    return 'uuid' + x;
+}
+
+const recent_chat_list = docQ('#recent_chat_list');
+
+function init_recent_chat_form(current_uuid) {
+    nav_title.innerText = 'Recent Chats';
+    recent_chat_list.innerHTML = '';
+    const docRef = db.collection('chats');
+    for (i = 1; i < 3; i++) {
+        docRef.where(`uuid${i}`, '==', current_uuid)
+            .orderBy('last_activity', 'desc')
+            .get().then(function (doc) {
+                doc.forEach(function (doc) {
+                    const thread_array = (doc.id).split('-');
+                    var match_uuid;
+                    thread_array[1] === current_uuid ? match_uuid = thread_array[2] : match_uuid = thread_array[1];
+                    decipher_uuid(match_uuid).then((name) => {
+                        // Year int converter
+
+                        db.collection('users').doc(match_uuid).get()
+                            .then(function (doc) {
+                                const result = doc.data(),
+                                    pp = result.pp || 'assets/graphics/placeholder.png',
+                                    user_element = document.createElement('div');
+
+                                user_element.classList.add('user');
+                                recent_chat_list.appendChild(user_element);
+
+                                user_element.innerHTML += `
+                                <p class="user_name">${name}</p>
+                                <img src="${pp}" class="user_thumb">
+                            `;
+
+                                user_element.addEventListener('click', () => {
+                                    const match_uuid = doc.id,
+                                        thread_id = set_thread_id(current_uuid, match_uuid);
+                                    toggle_page('chat_form');
+                                    init_chat_form(current_uuid, match_uuid);
+                                    recall_chat_history(current_uuid, match_uuid, thread_id);
+                                });
+                            })
+                            .catch(function (error) {
+                                console.log('Error getting documents: ', error);
+                            });
+                    });
+                    // end stuff
+                });
+            })
+    }
+}
+
+// ==============================
 // chat_form
 // ==============================
 
@@ -502,15 +566,26 @@ function init_chat_form(current_uuid, match_uuid) { // Initializes the chat form
 
 function send_message(current_uuid, match_uuid, thread_id) { // Sends a message from chat form message input
     if (message_input.value) {
+        // 1. Set uuid's & last active
         const data = {
-            content: message_input.value,
-            from: current_uuid,
-            to: match_uuid,
-            when: timestamp()
+            uuid1: current_uuid,
+            uuid2: match_uuid,
+            last_activity: timestamp(),
         };
-        db.collection('chats').doc('thread-' + thread_id).collection('messages').doc().set(data).then(function () {
-            broadcast('Message Sent!', 'var(--green)');
-            message_input.value = '';
+        db.collection('chats').doc('thread-' + thread_id).set(data).then(function () {
+            // 2. Send the message.
+            const data = {
+                content: message_input.value,
+                from: current_uuid,
+                to: match_uuid,
+                when: timestamp()
+            };
+            db.collection('chats').doc('thread-' + thread_id).collection('messages').doc().set(data).then(function () {
+                broadcast('Message Sent!', 'var(--green)');
+                message_input.value = '';
+            }).catch(function (error) {
+                console.error(error);
+            });
         }).catch(function (error) {
             console.error(error);
         });
@@ -600,18 +675,10 @@ function scroll_to_bottom(command) { // Scroll to the bottom if scroll height is
     }
 }
 
-function set_thread_id(uuid1, uuid2) {
+function set_thread_id(uuid1, uuid2) { // param uuid1 = current, param uuid2 = match
     // Determines what the thread_id will be based on current_uuid and match_uuid
     let thread_id;
     uuid1 > uuid2 ? thread_id = uuid1 + '-' + uuid2 : thread_id = uuid2 + '-' + uuid1;
-    // Set thread participant fields
-    const data = {
-        uuid1: uuid1,
-        uuid2: uuid2
-    };
-    db.collection('chats').doc('thread-' + thread_id).set(data).then(function () { }).catch(function (error) {
-        console.error(error);
-    });
     return thread_id;
 }
 
@@ -760,6 +827,7 @@ function display_profile_stats(result) {
         stat_pp.src = pp; // Insert source
     } else {
         profile_pic_placeholder.style.display = 'block';
+        stat_pp.src = ''; // Insert source
     }
 }
 
@@ -775,7 +843,7 @@ function toggle_user_block(target, current_uuid, command) {
         decipher_uuid(target).then((name) => {
             console.log(`Toggling block on ${name}...`);
         });
-        toggle_page('user_hub_form'); // Back out
+        toggle_page('browse_users_form'); // Back out
     }).catch(function (error) {
         console.error(error);
     });
@@ -895,7 +963,7 @@ function delete_user(current_uuid) {
     var docRef = db.collection('users').doc(current_uuid).collection('blocked');
 
     docRef.get().then(function (doc) {
-        browse_profiles_wrap.innerHTML = '';
+        browse_profiles_list.innerHTML = '';
         doc.forEach(function (doc) {
             docRef.doc(doc.id).delete();
         });
@@ -969,41 +1037,22 @@ init(); // First Function
 
 // Completed This Week
 
-// #1. *
+// #1. Recent chat page, sorts by last activity
+// #2. Made browse page like the UI prototype
 
-// #Priority tasks...
+// === Priority tasks...
 
-// #1. *Fix 1st user no event listener?.
+// Ability to fully edit profile after creation
+// Add user photos (on setup page)
+// Add conditions to load_back_button() for the new pages
+// Optimize :last-of-type JS queries
+// Optimize profile pictures to be background images and combine show/hide if statement on profile view page
+// Optimize the chat recall & observer
 
-// Add previously chatted with page
-// - Re-purpose existing browse page with this one
-// - Needs most recent message preview
-// - Sort by last interacted with (maybe create a new field 'last-activity' which is updated each time a message is sent
-//       then query the page with order by 'last-activity')
-// Browse user page
-// - Copy User Hub except it needs...
-//      The anthem, anthem is getting re-named "favorite song"
-//      Age
-//      Vertical layout, large profile picture
+// === Scope Creep Tasks...
 
-// Add nav bar [Profile | Home "Shuffle" | Recent Chats]
-// Add vices setup cms
-// Vices yes, no, do not show properties
-
-// #2. *Add user photos (on setup page).
-// #1. *Guilty-Pleasure song.
-// #4. *Optimize the chat recall & observer.
-
-// Do later...
-
-// #1. *Fully edit profile after creation.
-
-// Scope Creep Tasks...
-
-// #2. *Last active stat, query users only active in passed x days.
-// #3. *Embedded chat messages for links, music. (Try to get meta to appear).
-// #4. *Offline chat storage.
-// #5. *Delete messages, appear as 'Message Deleted'.
-// #3. *Limit user hub and message queries.
-// ____User: Limit to active within 7 days, up to 100 users, button to view more.
-// ____Chats: Limit to 25 chats, (descending query but CSS flex reverse), button to view older.
+// #1. *Last active stat, query users only active in passed x days.
+// #2. *Embedded chat messages for links, music. (Try to get meta to appear).
+// #3. *Offline chat storage.
+// #4. *Delete messages, appear as 'Message Deleted'.
+// #5. *Limit browse user results and chat message results.
